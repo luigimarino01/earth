@@ -1,9 +1,9 @@
 from pathlib import Path
 import argparse
 
-from converter import netcdf_to_bin, netcdf_to_png
+from converter import netcdf_to_bin, netcdf_to_png, load_data
 from s3client import S3Client
-from visualizer import bin_to_earth_json, png_to_earth_json
+from visualizer import bin_to_earth_json, png_to_earth_json, to_earth_json
 
 NETCDF_DIR = Path.cwd().parent.joinpath("netcdf")
 TMP_DIR = Path.cwd().parent.joinpath("tmp")
@@ -14,8 +14,14 @@ S3_DIR = Path("")
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("name", help="The name of the file in the netcdf directory to visualize.")
+    parser.add_argument("--show-only", "-s", action="store_true", help="Only visualize the netCDF file on earth avoiding the conversion process.")
     parser.add_argument("--mode", "-m", choices=["bin", "png"], default="bin", help="Set the type of conversion to apply before uploading to S3.")
     args = parser.parse_args()
+
+    if args.show_only:
+        lats, lons, u, v = load_data(NETCDF_DIR, args.name)
+        to_earth_json(lats, lons, u, v)
+        exit(0)
 
     if args.mode == "bin":
         filename = args.name + ".bin"
