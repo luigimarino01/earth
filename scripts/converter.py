@@ -49,7 +49,7 @@ def netcdf_to_png(input_dir, filename, output_dir):
         # Store the output images
         coords_file = output_folder.joinpath(f"{i}.coords.png")
         Image.fromarray(coords_img_data, mode="RGBA").save(coords_file)
-        uv_file = output_folder.joinpath(filename + f"{i}.uv.png")
+        uv_file = output_folder.joinpath(f"{i}.uv.png")
         Image.fromarray(uv_img_data, mode="RGBA").save(uv_file)
 
 def serialize(data):
