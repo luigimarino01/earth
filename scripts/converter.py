@@ -4,8 +4,8 @@ from PIL import Image
 from pathlib import Path
 import struct
 
-VAR_U = "U10M"
-VAR_V = "V10M"
+VAR_U = "u"
+VAR_V = "v"
 VAR_LAT = "latitude"
 VAR_LON = "longitude"
 
@@ -27,27 +27,30 @@ def load_data(input_dir, filename):
     ds = xr.open_dataset(input_dir.joinpath(filename + ".nc.nc4"))
     lats = ds[VAR_LAT].values
     lons = ds[VAR_LON].values
-    u = ds[VAR_U].isel(time=0).squeeze().values
-    v = ds[VAR_V].isel(time=0).squeeze().values
+    u = ds[VAR_U].squeeze().values
+    v = ds[VAR_V].squeeze().values
     return lats, lons, u, v
 
 def netcdf_to_png(input_dir, filename, output_dir):
     # Converts the given NetCDF file to two PNG files, by encoding data into RGBA channels
     lats, lons, u, v = load_data(input_dir, filename)
 
-    # Encode the extracted data
-    coords_img_data = np.zeros((u.shape[0], u.shape[1], 4), dtype=np.uint8)
-    uv_img_data = np.zeros((u.shape[0], u.shape[1], 4), dtype=np.uint8)
+    output_folder = output_dir.joinpath(filename)
+    output_folder.mkdir(exist_ok=True)
     for i in range(u.shape[0]):
+        # Encode the extracted data
+        coords_img_data = np.zeros((u.shape[1], u.shape[2], 4), dtype=np.uint8)
+        uv_img_data = np.zeros((u.shape[1], u.shape[2], 4), dtype=np.uint8)
         for j in range(u.shape[1]):
-            coords_img_data[i, j] = encode(lats[i], -90, 90, lons[j], -180, 180)
-            uv_img_data[i, j] = encode(u[i, j], -50, 50, v[i, j], -50, 50)
+            for k in range(u.shape[2]):
+                coords_img_data[j, k] = encode(lats[j], -90, 90, lons[k], -180, 180)
+                uv_img_data[j, k] = encode(u[i, j, k], -50, 50, v[i, j, k], -50, 50)
 
-    # Store the output images
-    coords_file = output_dir.joinpath(filename + ".coords.png")
-    Image.fromarray(coords_img_data, mode="RGBA").save(coords_file)
-    uv_file = output_dir.joinpath(filename + ".uv.png")
-    Image.fromarray(uv_img_data, mode="RGBA").save(uv_file)
+        # Store the output images
+        coords_file = output_folder.joinpath(f"{i}.coords.png")
+        Image.fromarray(coords_img_data, mode="RGBA").save(coords_file)
+        uv_file = output_folder.joinpath(filename + f"{i}.uv.png")
+        Image.fromarray(uv_img_data, mode="RGBA").save(uv_file)
 
 def serialize(data):
     # Serialize one or more float values into their binary representations
