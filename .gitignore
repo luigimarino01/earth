@@ -7,3 +7,4 @@ private
 *.iml
 scripts/.aws.env
 netcdf/*
+tmp/*

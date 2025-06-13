@@ -1,57 +1,52 @@
 from pathlib import Path
 import argparse
+import numpy as np
 
-from converter import netcdf_to_bin, netcdf_to_png, load_data
+from converter import netcdf_to_png, load_data
 from s3client import S3Client
-from visualizer import bin_to_earth_json, png_to_earth_json, to_earth_json
+from visualizer import png_to_earth_json, to_earth_json
 
 NETCDF_DIR = Path.cwd().parent.joinpath("netcdf")
 TMP_DIR = Path.cwd().parent.joinpath("tmp")
 
 S3_BUCKET = "ccpaper001"
-S3_DIR = Path("")
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("name", help="The name of the file in the netcdf directory to visualize.")
-    parser.add_argument("--show-only", "-s", action="store_true", help="Only visualize the netCDF file on earth avoiding the conversion process.")
-    parser.add_argument("--mode", "-m", choices=["bin", "png"], default="bin", help="Set the type of conversion to apply before uploading to S3.")
+    parser.add_argument("name", help="The name of the input NetCDF file to visualize. It must be located in the netcdf folder.")
+    parser.add_argument("--cuda", "-c", action="store_true", help="If enabled it accelerates the encoding and deconding stages through CUDA, whenever its possible.")
+
+    subparsers = parser.add_subparsers(dest="action")
+    encode_parser = subparsers.add_parser("encode", help="Encode the given NetCDF file to PNGs.")
+
+    view_parser = subparsers.add_parser("view", help="Decode PNG files associated to the given input and visualize them on Earth.")
+    view_parser.add_argument("time", default=0, type=int, help="The specific time instant to visualize.")
+    view_parser.add_argument("--use-netcdf", "-n", action="store_true", help="Take data from the base NetCDF file instead of decoding PNGs.")
     args = parser.parse_args()
 
-    if args.show_only:
-        lats, lons, u, v = load_data(NETCDF_DIR, args.name)
-        to_earth_json(lats, lons, u, v)
-        exit(0)
-
-    if args.mode == "bin":
-        filename = args.name + ".bin"
-        local_files = [str(TMP_DIR.joinpath(filename))]
-        s3_files = [str(S3_DIR.joinpath(filename))]
-    elif args.mode == "png":
-        f1 = args.name + ".coords.png"
-        f2 = args.name + ".uv.png"
-        local_files = [str(TMP_DIR.joinpath(f1)), str(TMP_DIR.joinpath(f2))]
-        s3_files = [str(S3_DIR.joinpath(f1)), str(S3_DIR.joinpath(f2))]
+    png_folder = TMP_DIR.joinpath(args.name)
+    png_folder.mkdir(exist_ok=True, parents=True)
 
     client = S3Client()
-    if client.exists(s3_files[0], S3_BUCKET):
-        # Download the converted file(s) from S3 if they have been already uploaded
-        print("Downloading converted files...")
-        client.download(s3_files, S3_BUCKET, local_files)
-    else:
-        # Convert the netCDF file according to the selected mode
-        print(f"Converting to {args.mode}...")
-        if args.mode == "png":
-            netcdf_to_png(NETCDF_DIR, args.name, TMP_DIR)
-        else:
-            netcdf_to_bin(NETCDF_DIR, args.name, TMP_DIR)
+    if args.action == "encode":
+        # Encode netCDF file to PNG format
+        print(f"Converting to PNG tiles...")
+        netcdf_to_png(NETCDF_DIR, args.name, png_folder, args.cuda)
 
-        # Upload the converted file(s) to S3
+        # Upload PNG files to S3
         print("Uploading to S3...")
-        client.upload(local_files, S3_BUCKET, s3_files)
+        #client.upload_folder(png_folder, S3_BUCKET)
+    elif args.action == "view":
+        if args.use_netcdf:
+            lats, lons, u, v = load_data(NETCDF_DIR, args.name)
+            u[args.time] = np.nan_to_num(u[args.time], nan=0)
+            v[args.time] = np.nan_to_num(v[args.time], nan=0)
+            to_earth_json(lats, lons, u[args.time], v[args.time])
+        else:
+            # Download the PNG files from S3 if they have been already uploaded
+            print("Downloading converted files...")
+            #client.download_folder(args.name, S3_BUCKET, TMP_DIR)
 
-    print("Visualizing on earth...")
-    if args.mode == "png":
-        png_to_earth_json(TMP_DIR, args.name)
-    elif args.mode == "bin":
-        bin_to_earth_json(TMP_DIR, args.name)
+            # View data on Earth
+            print("Visualizing on earth...")
+            png_to_earth_json(png_folder, args.time, args.cuda)

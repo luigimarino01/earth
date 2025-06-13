@@ -1,5 +1,6 @@
 import boto3
 import dotenv
+from pathlib import Path
 
 class S3Client:
     def __init__(self):
@@ -11,9 +12,12 @@ class S3Client:
             region_name=dotenv.get_key(".aws.env", "REGION_NAME")
         )
 
-    def upload(self, locals, bucket, remotes):
-        for local_file, remote_file in zip(locals, remotes):
-            self.s3.upload_file(local_file, bucket, remote_file)
+    def upload_folder(self, local_folder, bucket):
+        print(local_folder.name)
+        self.s3.put_object(Bucket=bucket, Key=local_folder.name + "/")
+        for local_file in local_folder.iterdir():
+            remote_file = local_folder.name + "/" + local_file.name
+            self.s3.upload_file(str(local_file), bucket, remote_file)
 
     def exists(self, filepath, bucket):
         try:
@@ -22,6 +26,15 @@ class S3Client:
         except self.s3.exceptions.ClientError as e:
             return False
         
-    def download(self, remotes, bucket, locals):
-        for remote_file, local_file in zip(remotes, locals):
-            self.s3.download_file(bucket, remote_file, local_file)
+    def download_folder(self, remote_folder, bucket, local_folder):
+        paginator = self.s3.get_paginator('list_objects_v2')
+        pages = paginator.paginate(Bucket=bucket, Prefix=remote_folder)
+        for page in pages:
+            if 'Contents' in page:
+                for obj in page['Contents']:
+                    object_key = obj['Key']
+                    filepath = local_folder.joinpath(object_key)
+                    if object_key.endswith("/"):
+                        filepath.mkdir(exist_ok=True, parents=True)
+                    else:
+                        self.s3.download_file(bucket, object_key, str(filepath))
